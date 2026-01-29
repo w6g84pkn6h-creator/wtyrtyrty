@@ -1,5 +1,5 @@
 // Настройки
-const EARNINGS_PER_HOUR = 50;          // Сколько € за час (можно менять)
+const EARNINGS_PER_HOUR = 450;          // ₽ в час
 const EARNINGS_PER_SECOND = EARNINGS_PER_HOUR / 3600;
 
 let selectedHours = 8;
@@ -28,7 +28,7 @@ function formatTime(seconds) {
 // Обновление экрана
 function updateDisplay() {
   timerEl.textContent = formatTime(remainingSeconds);
-  earningsEl.textContent = earnings.toFixed(2) + ' €';
+  earningsEl.textContent = earnings.toFixed(2) + ' ₽';
 }
 
 // Выбор режима
@@ -45,7 +45,7 @@ modeBtns.forEach(btn => {
   });
 });
 
-// Старт / Пауза
+// Старт
 startBtn.addEventListener('click', () => {
   if (isRunning) return;
   isRunning = true;
@@ -62,12 +62,13 @@ startBtn.addEventListener('click', () => {
       isRunning = false;
       startBtn.disabled = false;
       pauseBtn.disabled = true;
-      alert('Время вышло! Заработано: ' + earnings.toFixed(2) + ' €');
-      // Можно добавить вибрацию: navigator.vibrate?.(200);
+      alert('Время вышло! Заработано: ' + earnings.toFixed(2) + ' ₽');
+      // navigator.vibrate?.(200); // вибрация, если хочешь включить
     }
   }, 1000);
 });
 
+// Пауза
 pauseBtn.addEventListener('click', () => {
   clearInterval(interval);
   isRunning = false;
@@ -75,6 +76,7 @@ pauseBtn.addEventListener('click', () => {
   pauseBtn.disabled = true;
 });
 
+// Сброс
 resetBtn.addEventListener('click', () => {
   clearInterval(interval);
   isRunning = false;
@@ -85,7 +87,7 @@ resetBtn.addEventListener('click', () => {
   updateDisplay();
 });
 
-// Сохранение прогресса (если закрыть и открыть)
+// Восстановление состояния при загрузке страницы
 window.addEventListener('load', () => {
   const saved = localStorage.getItem('timerState');
   if (saved) {
@@ -95,23 +97,30 @@ window.addEventListener('load', () => {
     earnings = data.earnings || 0;
     updateDisplay();
     modeBtns.forEach(b => {
-      if (parseInt(b.dataset.hours) === selectedHours) b.classList.add('active');
+      if (parseInt(b.dataset.hours) === selectedHours) {
+        b.classList.add('active');
+      }
     });
+  } else {
+    // если нет сохранённого — выбираем "День" по умолчанию
+    document.querySelector('[data-hours="8"]').classList.add('active');
   }
 });
 
+// Сохранение перед уходом со страницы
 window.addEventListener('beforeunload', () => {
   localStorage.setItem('timerState', JSON.stringify({
     hours: selectedHours,
     remaining: remainingSeconds,
-    earnings
+    earnings: earnings
   }));
 });
 
-// Service Worker для оффлайн
+// Регистрация Service Worker (для оффлайн и PWA)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .catch(err => console.log('SW error:', err));
+    navigator.serviceWorker.register('sw.js')
+      .then(reg => console.log('Service Worker registered!', reg))
+      .catch(err => console.log('Service Worker registration failed:', err));
   });
 }
