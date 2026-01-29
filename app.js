@@ -5,9 +5,12 @@ const EARNINGS_PER_SECOND = EARNINGS_PER_HOUR / 3600;
 let selectedHours = 8;
 let totalSeconds = selectedHours * 3600;
 let remainingSeconds = totalSeconds;
-let earnings = 0;
+let displayedEarnings = 0;              // то, что показываем (плавное)
+let targetEarnings = 0;                 // реальное накопленное значение
+let lastTime = 0;
 let interval = null;
 let isRunning = false;
+let animationFrameId = null;
 
 // Элементы
 const timerEl = document.getElementById('timer');
@@ -25,23 +28,63 @@ function formatTime(seconds) {
   return `${h}:${m}:${s}`;
 }
 
-// Обновление экрана
-function updateDisplay() {
-  timerEl.textContent = formatTime(remainingSeconds);
-  earningsEl.textContent = earnings.toFixed(2) + ' ₽';
+// Форматирование заработка (можно убрать .00 если хочешь целые рубли)
+function formatEarnings(value) {
+  return value.toFixed(2) + ' ₽';
+}
+
+// Плавная анимация заработка
+function animateEarnings(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const delta = (timestamp - lastTime) / 1000; // секунды с прошлого кадра
+  lastTime = timestamp;
+
+  if (isRunning) {
+    // Реальное накопление (независимо от анимации)
+    targetEarnings += EARNINGS_PER_SECOND * delta;
+
+    // Плавный подход displayed → target
+    const diff = targetEarnings - displayedEarnings;
+    if (Math.abs(diff) > 0.0001) {
+      displayedEarnings += diff * 0.12; // скорость "догонки" (0.08–0.2 — пробуй)
+    } else {
+      displayedEarnings = targetEarnings;
+    }
+
+    earningsEl.textContent = formatEarnings(displayedEarnings);
+  }
+
+  animationFrameId = requestAnimationFrame(animateEarnings);
+}
+
+// Обновление таймера (каждую секунду)
+function updateTimer() {
+  if (remainingSeconds > 0) {
+    remainingSeconds--;
+    timerEl.textContent = formatTime(remainingSeconds);
+  } else {
+    clearInterval(interval);
+    isRunning = false;
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    cancelAnimationFrame(animationFrameId);
+    alert('Время вышло! Заработано ≈ ' + formatEarnings(targetEarnings));
+  }
 }
 
 // Выбор режима
 modeBtns.forEach(btn => {
   btn.addEventListener('click', () => {
-    if (isRunning) return; // нельзя менять во время работы
+    if (isRunning) return;
     modeBtns.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     selectedHours = parseInt(btn.dataset.hours);
     totalSeconds = selectedHours * 3600;
     remainingSeconds = totalSeconds;
-    earnings = 0;
-    updateDisplay();
+    targetEarnings = 0;
+    displayedEarnings = 0;
+    timerEl.textContent = formatTime(remainingSeconds);
+    earningsEl.textContent = formatEarnings(0);
   });
 });
 
@@ -52,25 +95,15 @@ startBtn.addEventListener('click', () => {
   startBtn.disabled = true;
   pauseBtn.disabled = false;
 
-  interval = setInterval(() => {
-    if (remainingSeconds > 0) {
-      remainingSeconds--;
-      earnings += EARNINGS_PER_SECOND;
-      updateDisplay();
-    } else {
-      clearInterval(interval);
-      isRunning = false;
-      startBtn.disabled = false;
-      pauseBtn.disabled = true;
-      alert('Время вышло! Заработано: ' + earnings.toFixed(2) + ' ₽');
-      // navigator.vibrate?.(200); // вибрация, если хочешь включить
-    }
-  }, 1000);
+  lastTime = 0;
+  animationFrameId = requestAnimationFrame(animateEarnings);
+  interval = setInterval(updateTimer, 1000);
 });
 
 // Пауза
 pauseBtn.addEventListener('click', () => {
   clearInterval(interval);
+  cancelAnimationFrame(animationFrameId);
   isRunning = false;
   startBtn.disabled = false;
   pauseBtn.disabled = true;
@@ -79,48 +112,52 @@ pauseBtn.addEventListener('click', () => {
 // Сброс
 resetBtn.addEventListener('click', () => {
   clearInterval(interval);
+  cancelAnimationFrame(animationFrameId);
   isRunning = false;
   startBtn.disabled = false;
   pauseBtn.disabled = true;
   remainingSeconds = totalSeconds;
-  earnings = 0;
-  updateDisplay();
+  targetEarnings = 0;
+  displayedEarnings = 0;
+  timerEl.textContent = formatTime(remainingSeconds);
+  earningsEl.textContent = formatEarnings(0);
 });
 
-// Восстановление состояния при загрузке страницы
+// Восстановление состояния
 window.addEventListener('load', () => {
   const saved = localStorage.getItem('timerState');
   if (saved) {
     const data = JSON.parse(saved);
     selectedHours = data.hours || 8;
     remainingSeconds = data.remaining || selectedHours * 3600;
-    earnings = data.earnings || 0;
-    updateDisplay();
+    targetEarnings = data.earnings || 0;
+    displayedEarnings = targetEarnings; // сразу показываем реальное
+    timerEl.textContent = formatTime(remainingSeconds);
+    earningsEl.textContent = formatEarnings(displayedEarnings);
     modeBtns.forEach(b => {
-      if (parseInt(b.dataset.hours) === selectedHours) {
-        b.classList.add('active');
-      }
+      if (parseInt(b.dataset.hours) === selectedHours) b.classList.add('active');
     });
   } else {
-    // если нет сохранённого — выбираем "День" по умолчанию
     document.querySelector('[data-hours="8"]').classList.add('active');
   }
+
+  // Запускаем анимацию сразу (даже если на паузе — для красоты)
+  animationFrameId = requestAnimationFrame(animateEarnings);
 });
 
-// Сохранение перед уходом со страницы
+// Сохранение
 window.addEventListener('beforeunload', () => {
   localStorage.setItem('timerState', JSON.stringify({
     hours: selectedHours,
     remaining: remainingSeconds,
-    earnings: earnings
+    earnings: targetEarnings   // сохраняем реальное значение
   }));
 });
 
-// Регистрация Service Worker (для оффлайн и PWA)
+// Service Worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js')
-      .then(reg => console.log('Service Worker registered!', reg))
-      .catch(err => console.log('Service Worker registration failed:', err));
+      .catch(err => console.log('SW error:', err));
   });
 }
